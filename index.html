@@ -25,15 +25,15 @@ input[type=text]:focus{border-color:#888;}
 .sec-title{font-size:12px;font-weight:600;color:#888;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px;}
 .slot-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
 .time-lbl{font-size:12px;color:#888;min-width:44px;text-align:right;flex-shrink:0;}
-.slot-bar{flex:1;border-radius:8px;border:1px solid #e5e5e5;background:#f9f9f9;min-height:36px;display:flex;align-items:center;overflow:hidden;cursor:pointer;transition:border-color .15s;}
-.slot-bar:hover{border-color:#aaa;}
-.slot-bar.full{background:#fff0f0;border-color:#fca5a5;cursor:default;}
-.slot-bar.full:hover{border-color:#fca5a5;}
-.avatars{display:flex;gap:3px;padding:4px 8px;flex:1;flex-wrap:wrap;}
-.avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;}
+.slot-bar{flex:1;border-radius:8px;border:1px solid #e5e5e5;background:#f9f9f9;min-height:36px;display:flex;align-items:center;overflow:hidden;}
+.slot-bar.full{background:#fff0f0;border-color:#fca5a5;}
+.avatars{display:flex;gap:3px;padding:4px 8px;flex:1;flex-wrap:wrap;align-items:center;}
+.avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;}
+.avatar.mine{cursor:pointer;position:relative;outline:2px solid #111;outline-offset:1px;}
+.avatar.mine:hover::after{content:'退出';position:absolute;top:-24px;left:50%;transform:translateX(-50%);background:#111;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;white-space:nowrap;}
 .slot-count{font-size:12px;color:#aaa;padding:0 8px;white-space:nowrap;flex-shrink:0;}
 .full-tag{font-size:12px;color:#ef4444;padding:0 10px;font-weight:600;margin-left:auto;}
-.add-btn{font-size:12px;color:#888;padding:0 12px;white-space:nowrap;}
+.add-btn{font-size:12px;color:#888;padding:0 12px;white-space:nowrap;cursor:pointer;}
 .add-btn:hover{color:#111;}
 .spacer{flex:1;}
 .legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}
@@ -45,11 +45,13 @@ input[type=text]:focus{border-color:#888;}
 .modal h3{font-size:15px;font-weight:600;margin-bottom:4px;}
 .modal p{font-size:13px;color:#666;margin-bottom:16px;}
 .mactions{display:flex;gap:8px;justify-content:flex-end;}
-.mbtn{padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #ddd;background:#fff;}
+.mbtn{padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #ddd;background:#fff;color:#111;}
 .mbtn.ok{background:#111;color:#fff;border-color:#111;}
+.mbtn.danger{background:#ef4444;color:#fff;border-color:#ef4444;}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 20px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:99;white-space:nowrap;}
 .toast.show{opacity:1;}
 .loading{text-align:center;padding:30px;color:#888;font-size:14px;}
+.hint{font-size:11px;color:#aaa;margin-top:6px;}
 </style>
 </head>
 <body>
@@ -63,6 +65,7 @@ input[type=text]:focus{border-color:#888;}
     <input type="text" id="uname" placeholder="輸入名字" />
     <div class="cpick" id="cpick"></div>
   </div>
+  <p class="hint">點自己的頭像可以退出該時段</p>
 </div>
 
 <div class="day-tabs" id="dayTabs"></div>
@@ -77,10 +80,7 @@ input[type=text]:focus{border-color:#888;}
   <div class="modal">
     <h3 id="mTitle"></h3>
     <p id="mDesc"></p>
-    <div class="mactions">
-      <button class="mbtn" id="mCancel">取消</button>
-      <button class="mbtn ok" id="mOk">確認加入</button>
-    </div>
+    <div class="mactions" id="mActions"></div>
   </div>
 </div>
 
@@ -171,11 +171,13 @@ function renderSlots() {
   const times = genTimes(day.start, day.end);
   const list = document.getElementById('slotsList');
   list.innerHTML = '';
+  const myName = document.getElementById('uname').value.trim();
 
   times.forEach(t => {
     const k = t.replace(':', '_');
-    const bookings = slots[k] ? Object.values(slots[k]) : [];
+    const bookings = slots[k] ? Object.entries(slots[k]).map(([id, v]) => ({id, ...v})) : [];
     const isFull = bookings.length >= MAX;
+    const myBooking = bookings.find(b => b.name === myName);
 
     const row = document.createElement('div');
     row.className = 'slot-row';
@@ -186,18 +188,21 @@ function renderSlots() {
     row.appendChild(lbl);
 
     const bar = document.createElement('div');
-    bar.className = 'slot-bar' + (isFull ? ' full' : '');
+    bar.className = 'slot-bar' + (isFull && !myBooking ? ' full' : '');
 
     if (bookings.length > 0) {
       const avs = document.createElement('div');
       avs.className = 'avatars';
       bookings.forEach(b => {
         const av = document.createElement('div');
-        av.className = 'avatar';
+        av.className = 'avatar' + (b.name === myName ? ' mine' : '');
         av.style.background = b.colorLight;
         av.style.color = b.colorText;
-        av.title = b.name;
+        av.title = b.name === myName ? b.name + '（點擊退出）' : b.name;
         av.textContent = b.name.slice(0, 2);
+        if (b.name === myName) {
+          av.onclick = () => openLeaveModal(t, k, b.id);
+        }
         avs.appendChild(av);
       });
       bar.appendChild(avs);
@@ -207,12 +212,12 @@ function renderSlots() {
       bar.appendChild(sp);
     }
 
-    if (isFull) {
+    if (isFull && !myBooking) {
       const fl = document.createElement('div');
       fl.className = 'full-tag';
       fl.textContent = '額滿';
       bar.appendChild(fl);
-    } else {
+    } else if (!myBooking) {
       const cnt = document.createElement('div');
       cnt.className = 'slot-count';
       cnt.textContent = bookings.length + '/' + MAX;
@@ -221,7 +226,11 @@ function renderSlots() {
       add.className = 'add-btn';
       add.textContent = '+ 加入';
       bar.appendChild(add);
-      bar.onclick = () => openModal(t, k, bookings);
+      bar.style.cursor = 'pointer';
+      bar.onclick = (e) => {
+        if (e.target.classList.contains('avatar')) return;
+        openJoinModal(t, k, bookings);
+      };
     }
 
     row.appendChild(bar);
@@ -254,18 +263,51 @@ function renderLegend() {
   });
 }
 
-function openModal(time, k, bookings) {
+function openJoinModal(time, k, bookings) {
   const name = document.getElementById('uname').value.trim();
   if (!name) { showToast('請先輸入名字！'); document.getElementById('uname').focus(); return; }
   if (bookings.find(b => b.name === name)) { showToast('你已在這個時段了！'); return; }
-  pending = { time, k };
+  pending = { type: 'join', time, k };
   const day = DAYS[curDay];
   document.getElementById('mTitle').textContent = day.label + ' ' + day.sub + ' ' + time;
   document.getElementById('mDesc').textContent = '以「' + name + '」加入此時段（目前 ' + bookings.length + '/' + MAX + ' 人）';
+  const actions = document.getElementById('mActions');
+  actions.innerHTML = '';
+  const cancel = document.createElement('button');
+  cancel.className = 'mbtn';
+  cancel.textContent = '取消';
+  cancel.onclick = closeModal;
+  const ok = document.createElement('button');
+  ok.className = 'mbtn ok';
+  ok.textContent = '確認加入';
+  ok.onclick = confirmJoin;
+  actions.appendChild(cancel);
+  actions.appendChild(ok);
   document.getElementById('modalBg').classList.add('open');
 }
 
-function confirmBook() {
+function openLeaveModal(time, k, bookingId) {
+  const name = document.getElementById('uname').value.trim();
+  pending = { type: 'leave', time, k, bookingId };
+  const day = DAYS[curDay];
+  document.getElementById('mTitle').textContent = '退出時段';
+  document.getElementById('mDesc').textContent = '確定要退出 ' + day.label + ' ' + day.sub + ' ' + time + ' 嗎？';
+  const actions = document.getElementById('mActions');
+  actions.innerHTML = '';
+  const cancel = document.createElement('button');
+  cancel.className = 'mbtn';
+  cancel.textContent = '保留';
+  cancel.onclick = closeModal;
+  const ok = document.createElement('button');
+  ok.className = 'mbtn danger';
+  ok.textContent = '確認退出';
+  ok.onclick = confirmLeave;
+  actions.appendChild(cancel);
+  actions.appendChild(ok);
+  document.getElementById('modalBg').classList.add('open');
+}
+
+function confirmJoin() {
   const name = document.getElementById('uname').value.trim();
   const { k } = pending;
   const ref = db.ref('slots/day' + curDay + '/' + k);
@@ -277,6 +319,13 @@ function confirmBook() {
     showToast('成功加入 ' + DAYS[curDay].label + ' ' + pending.time + '！');
     closeModal();
   });
+}
+
+function confirmLeave() {
+  const { k, bookingId, time } = pending;
+  db.ref('slots/day' + curDay + '/' + k + '/' + bookingId).remove();
+  showToast('已退出 ' + DAYS[curDay].label + ' ' + time);
+  closeModal();
 }
 
 function closeModal() {
@@ -291,9 +340,11 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-document.getElementById('mCancel').onclick = closeModal;
-document.getElementById('mOk').onclick = confirmBook;
-document.getElementById('modalBg').onclick = e => { if (e.target === document.getElementById('modalBg')) closeModal(); };
+document.getElementById('modalBg').onclick = e => {
+  if (e.target === document.getElementById('modalBg')) closeModal();
+};
+
+document.getElementById('uname').addEventListener('input', renderSlots);
 
 initColors();
 initDayTabs();
