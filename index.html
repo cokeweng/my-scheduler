@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>時段預約</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:system-ui,sans-serif;background:#f5f5f5;padding:20px;color:#111;}
+h1{font-size:20px;font-weight:600;margin-bottom:4px;}
+.sub{font-size:14px;color:#666;margin-bottom:20px;}
+.card{background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:20px;margin-bottom:12px;}
+.sec-label{font-size:11px;font-weight:600;color:#888;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;}
+.name-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+input[type=text]{border:1px solid #ddd;border-radius:8px;padding:8px 12px;font-size:14px;outline:none;width:180px;}
+input[type=text]:focus{border-color:#888;}
+.cpick{display:flex;gap:6px;}
+.cdot{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent;}
+.cdot.active{border-color:#111;transform:scale(1.15);}
+.day-tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.day-tab{padding:8px 18px;border-radius:99px;font-size:13px;cursor:pointer;border:1px solid #ccc;background:#fff;color:#666;}
+.day-tab.active{background:#111;color:#fff;border-color:#111;}
+.sec-title{font-size:12px;font-weight:600;color:#888;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px;}
+.slot-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+.time-lbl{font-size:12px;color:#888;min-width:44px;text-align:right;flex-shrink:0;}
+.slot-bar{flex:1;border-radius:8px;border:1px solid #e5e5e5;background:#f9f9f9;min-height:36px;display:flex;align-items:center;overflow:hidden;cursor:pointer;transition:border-color .15s;}
+.slot-bar:hover{border-color:#aaa;}
+.slot-bar.full{background:#fff0f0;border-color:#fca5a5;cursor:default;}
+.slot-bar.full:hover{border-color:#fca5a5;}
+.avatars{display:flex;gap:3px;padding:4px 8px;flex:1;flex-wrap:wrap;}
+.avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;}
+.slot-count{font-size:12px;color:#aaa;padding:0 8px;white-space:nowrap;flex-shrink:0;}
+.full-tag{font-size:12px;color:#ef4444;padding:0 10px;font-weight:600;margin-left:auto;}
+.add-btn{font-size:12px;color:#888;padding:0 12px;white-space:nowrap;}
+.add-btn:hover{color:#111;}
+.spacer{flex:1;}
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}
+.leg-item{display:flex;align-items:center;gap:5px;font-size:12px;color:#666;}
+.leg-dot{width:11px;height:11px;border-radius:50%;}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center;}
+.modal-bg.open{display:flex;}
+.modal{background:#fff;border-radius:14px;padding:24px;width:300px;max-width:90vw;}
+.modal h3{font-size:15px;font-weight:600;margin-bottom:4px;}
+.modal p{font-size:13px;color:#666;margin-bottom:16px;}
+.mactions{display:flex;gap:8px;justify-content:flex-end;}
+.mbtn{padding:8px 16px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid #ddd;background:#fff;}
+.mbtn.ok{background:#111;color:#fff;border-color:#111;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 20px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:99;white-space:nowrap;}
+.toast.show{opacity:1;}
+.loading{text-align:center;padding:30px;color:#888;font-size:14px;}
+</style>
+</head>
+<body>
+
+<h1>時段預約</h1>
+<p class="sub">點擊空格加入時段，每格最多 4 人，先填先贏！</p>
+
+<div class="card">
+  <div class="sec-label">你的名字與顏色</div>
+  <div class="name-row">
+    <input type="text" id="uname" placeholder="輸入名字" />
+    <div class="cpick" id="cpick"></div>
+  </div>
+</div>
+
+<div class="day-tabs" id="dayTabs"></div>
+
+<div class="card" id="slotsCard">
+  <div class="sec-title" id="dayTitle"></div>
+  <div id="slotsList"><div class="loading">載入中...</div></div>
+  <div class="legend" id="legend"></div>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3 id="mTitle"></h3>
+    <p id="mDesc"></p>
+    <div class="mactions">
+      <button class="mbtn" id="mCancel">取消</button>
+      <button class="mbtn ok" id="mOk">確認加入</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const firebaseConfig = {
+  databaseURL: "https://my-scheduler-c8ebb-default-rtdb.firebaseio.com"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const COLORS = [
+  {hex:'#4F8EF7',light:'#dbeafe',text:'#1e40af'},
+  {hex:'#2DC08A',light:'#d1fae5',text:'#065f46'},
+  {hex:'#E24B4A',light:'#fee2e2',text:'#991b1b'},
+  {hex:'#EF9F27',light:'#fef3c7',text:'#92400e'},
+  {hex:'#7F77DD',light:'#ede9fe',text:'#4c1d95'},
+  {hex:'#D4537E',light:'#fce7f3',text:'#9d174d'},
+];
+const MAX = 4;
+const DAYS = [
+  {label:'4/24',sub:'週四',start:'12:00',end:'14:00'},
+  {label:'4/29',sub:'週二',start:'12:00',end:'13:30'},
+];
+
+function genTimes(start, end) {
+  const times = [];
+  let [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  while (sh * 60 + sm < eh * 60 + em) {
+    times.push(String(sh).padStart(2,'0') + ':' + String(sm).padStart(2,'0'));
+    sm += 10; if (sm >= 60) { sh++; sm -= 60; }
+  }
+  return times;
+}
+
+let selColor = COLORS[0];
+let curDay = 0;
+let slots = {};
+let pending = null;
+let unsubscribe = null;
+
+function initColors() {
+  const c = document.getElementById('cpick');
+  COLORS.forEach((col, i) => {
+    const d = document.createElement('div');
+    d.className = 'cdot' + (i === 0 ? ' active' : '');
+    d.style.background = col.hex;
+    d.onclick = () => {
+      document.querySelectorAll('.cdot').forEach(x => x.classList.remove('active'));
+      d.classList.add('active');
+      selColor = col;
+    };
+    c.appendChild(d);
+  });
+}
+
+function initDayTabs() {
+  const tabs = document.getElementById('dayTabs');
+  DAYS.forEach((d, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'day-tab' + (i === 0 ? ' active' : '');
+    btn.innerHTML = `<strong>${d.label}</strong> ${d.sub} ${d.start}–${d.end}`;
+    btn.onclick = () => {
+      curDay = i;
+      document.querySelectorAll('.day-tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      listenToDay();
+    };
+    tabs.appendChild(btn);
+  });
+}
+
+function listenToDay() {
+  if (unsubscribe) unsubscribe();
+  const ref = db.ref('slots/day' + curDay);
+  const handler = ref.on('value', snap => {
+    slots = snap.val() || {};
+    renderSlots();
+  });
+  unsubscribe = () => ref.off('value', handler);
+}
+
+function renderSlots() {
+  const day = DAYS[curDay];
+  document.getElementById('dayTitle').textContent = day.label + ' ' + day.sub + '　' + day.start + '–' + day.end + '　每格最多 ' + MAX + ' 人';
+  const times = genTimes(day.start, day.end);
+  const list = document.getElementById('slotsList');
+  list.innerHTML = '';
+
+  times.forEach(t => {
+    const k = t.replace(':', '_');
+    const bookings = slots[k] ? Object.values(slots[k]) : [];
+    const isFull = bookings.length >= MAX;
+
+    const row = document.createElement('div');
+    row.className = 'slot-row';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'time-lbl';
+    lbl.textContent = t;
+    row.appendChild(lbl);
+
+    const bar = document.createElement('div');
+    bar.className = 'slot-bar' + (isFull ? ' full' : '');
+
+    if (bookings.length > 0) {
+      const avs = document.createElement('div');
+      avs.className = 'avatars';
+      bookings.forEach(b => {
+        const av = document.createElement('div');
+        av.className = 'avatar';
+        av.style.background = b.colorLight;
+        av.style.color = b.colorText;
+        av.title = b.name;
+        av.textContent = b.name.slice(0, 2);
+        avs.appendChild(av);
+      });
+      bar.appendChild(avs);
+    } else {
+      const sp = document.createElement('div');
+      sp.className = 'spacer';
+      bar.appendChild(sp);
+    }
+
+    if (isFull) {
+      const fl = document.createElement('div');
+      fl.className = 'full-tag';
+      fl.textContent = '額滿';
+      bar.appendChild(fl);
+    } else {
+      const cnt = document.createElement('div');
+      cnt.className = 'slot-count';
+      cnt.textContent = bookings.length + '/' + MAX;
+      bar.appendChild(cnt);
+      const add = document.createElement('div');
+      add.className = 'add-btn';
+      add.textContent = '+ 加入';
+      bar.appendChild(add);
+      bar.onclick = () => openModal(t, k, bookings);
+    }
+
+    row.appendChild(bar);
+    list.appendChild(row);
+  });
+
+  renderLegend();
+}
+
+function renderLegend() {
+  const lg = document.getElementById('legend');
+  lg.innerHTML = '';
+  const seen = {};
+  Object.values(slots).forEach(slot => {
+    if (slot) Object.values(slot).forEach(b => { seen[b.name] = b.colorHex; });
+  });
+  if (!Object.keys(seen).length) {
+    lg.innerHTML = '<span style="font-size:12px;color:#aaa;">還沒有人預約 — 來搶第一格！</span>';
+    return;
+  }
+  Object.entries(seen).forEach(([name, hex]) => {
+    const item = document.createElement('div');
+    item.className = 'leg-item';
+    const dot = document.createElement('div');
+    dot.className = 'leg-dot';
+    dot.style.background = hex;
+    item.appendChild(dot);
+    item.appendChild(document.createTextNode(name));
+    lg.appendChild(item);
+  });
+}
+
+function openModal(time, k, bookings) {
+  const name = document.getElementById('uname').value.trim();
+  if (!name) { showToast('請先輸入名字！'); document.getElementById('uname').focus(); return; }
+  if (bookings.find(b => b.name === name)) { showToast('你已在這個時段了！'); return; }
+  pending = { time, k };
+  const day = DAYS[curDay];
+  document.getElementById('mTitle').textContent = day.label + ' ' + day.sub + ' ' + time;
+  document.getElementById('mDesc').textContent = '以「' + name + '」加入此時段（目前 ' + bookings.length + '/' + MAX + ' 人）';
+  document.getElementById('modalBg').classList.add('open');
+}
+
+function confirmBook() {
+  const name = document.getElementById('uname').value.trim();
+  const { k } = pending;
+  const ref = db.ref('slots/day' + curDay + '/' + k);
+  ref.once('value', snap => {
+    const current = snap.val() ? Object.values(snap.val()) : [];
+    if (current.length >= MAX) { showToast('剛剛被搶走了！'); closeModal(); return; }
+    if (current.find(b => b.name === name)) { showToast('你已在這個時段了！'); closeModal(); return; }
+    ref.push({ name, colorHex: selColor.hex, colorLight: selColor.light, colorText: selColor.text });
+    showToast('成功加入 ' + DAYS[curDay].label + ' ' + pending.time + '！');
+    closeModal();
+  });
+}
+
+function closeModal() {
+  document.getElementById('modalBg').classList.remove('open');
+  pending = null;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+document.getElementById('mCancel').onclick = closeModal;
+document.getElementById('mOk').onclick = confirmBook;
+document.getElementById('modalBg').onclick = e => { if (e.target === document.getElementById('modalBg')) closeModal(); };
+
+initColors();
+initDayTabs();
+listenToDay();
+</script>
+</body>
+</html>
